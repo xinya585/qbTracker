@@ -26,11 +26,58 @@
 ╚══════════════════════════════════════════════════════════════════════════╝
 """
 
-import requests
-import json
+# ============================================================================
+# 环境诊断（放在最前面，帮助定位 Python 解释器）
+# ============================================================================
 import sys
-import time
 import os
+
+def print_environment_info():
+    """打印当前 Python 环境信息，帮助诊断"""
+    print("\n" + "=" * 60)
+    print("🐍 Python 环境信息")
+    print("=" * 60)
+    print(f"解释器路径: {sys.executable}")
+    print(f"Python 版本: {sys.version}")
+    print(f"脚本路径:   {os.path.abspath(__file__)}")
+    print("=" * 60 + "\n")
+
+print_environment_info()
+
+# ============================================================================
+# 安全导入第三方模块（防止因缺少依赖而闪退）
+# ============================================================================
+try:
+    import requests
+except ImportError:
+    print("\n❌ 错误：缺少必需的模块 'requests'")
+    print("请执行以下命令安装：")
+    print("    pip install requests")
+    print("\n按 Enter 键退出...")
+    input()
+    sys.exit(1)
+
+# 尝试导入 Rich 美化库（如果未安装则降级为普通输出）
+try:
+    from rich.console import Console
+    from rich.table import Table
+    from rich.panel import Panel
+    from rich.progress import Progress, BarColumn, TextColumn, TimeElapsedColumn, SpinnerColumn
+    from rich.live import Live
+    from rich.layout import Layout
+    from rich.text import Text
+    from rich import print as rprint
+    from rich.prompt import Prompt, Confirm
+    RICH_AVAILABLE = True
+    console = Console()
+except ImportError:
+    RICH_AVAILABLE = False
+    console = None
+    print("\n⚠️ 提示：安装 'rich' 库可获得更炫酷的界面效果：pip install rich\n")
+
+# 标准库导入
+import json
+import time
 import threading
 from typing import List, Dict, Any, Optional, Tuple
 from urllib.parse import urljoin
@@ -39,7 +86,7 @@ from enum import Enum
 import getpass
 
 # ============================================================================
-# 炫彩终端输出配置
+# 炫彩终端输出配置（降级方案，当 Rich 不可用时使用）
 # ============================================================================
 
 class Colors:
@@ -169,11 +216,11 @@ API_ENDPOINTS = {
 
 
 # ============================================================================
-# 右下角作者信息显示
+# 右下角作者信息显示（降级用）
 # ============================================================================
 
 class CornerPrinter:
-    """右下角信息打印器"""
+    """右下角信息打印器（仅当 Rich 不可用时使用）"""
     def __init__(self):
         self.author = "老司机"
         self.qq_group = "156586507"
@@ -203,7 +250,7 @@ class CornerPrinter:
 # ============================================================================
 
 class Spinner:
-    """加载动画"""
+    """加载动画（降级用）"""
     def __init__(self, message: str = "处理中"):
         self.message = message
         self.spinning = False
@@ -231,7 +278,7 @@ class Spinner:
 
 
 class ProgressBar:
-    """进度条"""
+    """进度条（降级用）"""
     def __init__(self, total: int, width: int = 40, prefix: str = ""):
         self.total = total
         self.width = width
@@ -249,7 +296,7 @@ class ProgressBar:
 
 
 class QBittorrentChecker:
-    """qBittorrent Tracker检查与清理器"""
+    """qBittorrent Tracker检查与清理器（增强美化版）"""
     
     def __init__(self, host: str, port: int, username: str, password: str, use_https: bool = False):
         protocol = "https" if use_https else "http"
@@ -280,7 +327,20 @@ class QBittorrentChecker:
         self.corner = CornerPrinter()
     
     def _print_banner(self):
-        banner = f"""
+        if RICH_AVAILABLE:
+            title = Text("QBITTRACKER v2.0", style="bold magenta")
+            subtitle = Text("智能Tracker状态检测系统", style="dim cyan")
+            banner = Panel(
+                f"{title}\n{subtitle}\n\n[green]判断标准[/]: 只要有一个Tracker正常工作，即视为正常种子\n"
+                f"[yellow]作者[/]: 老司机  [cyan]QQ群[/]: 156586507\n"
+                f"[dim]{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}[/]",
+                title="[bold bright_cyan]🚀 TRACKER GUARDIAN[/]",
+                border_style="bright_blue",
+                padding=(1, 2)
+            )
+            console.print(banner)
+        else:
+            banner = f"""
 {Colors.BRIGHT_CYAN}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 70}{Icon.TOP_RIGHT}{Colors.RESET}
 {Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_MAGENTA}{Icon.BOLT} QBITTRACKER v2.0{Colors.RESET} - 智能Tracker状态检测系统
 {Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.DIM}{datetime.now().strftime('%Y-%m-%d %H:%M:%S')}{Colors.RESET}
@@ -288,51 +348,89 @@ class QBittorrentChecker:
 {Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_YELLOW}作者{Colors.RESET}: 老司机  {Colors.BRIGHT_CYAN}QQ群{Colors.RESET}: 156586507
 {Colors.BRIGHT_CYAN}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 70}{Icon.BOTTOM_RIGHT}{Colors.RESET}
 """
-        print(banner)
+            print(banner)
     
     def connect(self) -> bool:
         self._print_banner()
         
-        spinner = Spinner(f"正在连接 {self.base_url}")
-        spinner.start()
-        
-        try:
-            login_url = urljoin(self.base_url, self.api["login"])
-            login_data = {"username": self.username, "password": self.password}
+        if RICH_AVAILABLE:
+            with console.status("[bold cyan]正在连接...[/]") as status:
+                status.update(f"连接 {self.base_url}")
+                try:
+                    login_url = urljoin(self.base_url, self.api["login"])
+                    login_data = {"username": self.username, "password": self.password}
+                    
+                    if not self.username and not self.password:
+                        response = self.session.get(login_url)
+                    else:
+                        response = self.session.post(login_url, data=login_data)
+                    
+                    if response.status_code == 403:
+                        console.print("[red]❌ 访问被拒绝：用户名或密码错误[/]")
+                        return False
+                        
+                    if response.status_code == 200 or "Fails" not in response.text:
+                        self.connected = True
+                        console.print(f"[green]✓ 成功连接到 {self.base_url}[/]")
+                        
+                        if self.enable_tagging:
+                            self._ensure_tags_exist()
+                        
+                        # 显示作者信息（右下角）
+                        console.print(Panel("🐧 老司机  💬 156586507", style="dim", border_style="bright_blue"))
+                        return True
+                    else:
+                        console.print("[red]✗ 登录失败[/]")
+                        return False
+                        
+                except requests.exceptions.ConnectionError:
+                    console.print(f"[red]✗ 无法连接到 qBittorrent: {self.base_url}[/]")
+                    console.print("[yellow]⚠ 请检查: 服务状态 | 端口配置 | 防火墙规则[/]")
+                    return False
+                except Exception as e:
+                    console.print(f"[red]✗ 连接异常: {e}[/]")
+                    return False
+        else:
+            spinner = Spinner(f"正在连接 {self.base_url}")
+            spinner.start()
             
-            if not self.username and not self.password:
-                response = self.session.get(login_url)
-            else:
-                response = self.session.post(login_url, data=login_data)
-            
-            spinner.stop()
-            
-            if response.status_code == 403:
-                print(f"{Colors.RED}{Icon.ERROR} 访问被拒绝：用户名或密码错误{Colors.RESET}")
+            try:
+                login_url = urljoin(self.base_url, self.api["login"])
+                login_data = {"username": self.username, "password": self.password}
+                
+                if not self.username and not self.password:
+                    response = self.session.get(login_url)
+                else:
+                    response = self.session.post(login_url, data=login_data)
+                
+                spinner.stop()
+                
+                if response.status_code == 403:
+                    print(f"{Colors.RED}{Icon.ERROR} 访问被拒绝：用户名或密码错误{Colors.RESET}")
+                    return False
+                    
+                if response.status_code == 200 or "Fails" not in response.text:
+                    self.connected = True
+                    print(f"{Colors.GREEN}{Icon.SUCCESS} 成功连接到 {Colors.BRIGHT_WHITE}{self.base_url}{Colors.RESET}")
+                    
+                    if self.enable_tagging:
+                        self._ensure_tags_exist()
+                    
+                    self.corner.print_bottom_line()
+                    return True
+                else:
+                    print(f"{Colors.RED}{Icon.ERROR} 登录失败{Colors.RESET}")
+                    return False
+                    
+            except requests.exceptions.ConnectionError:
+                spinner.stop()
+                print(f"{Colors.RED}{Icon.ERROR} 无法连接到 qBittorrent: {self.base_url}{Colors.RESET}")
+                print(f"{Colors.YELLOW}{Icon.WARNING} 请检查: 服务状态 | 端口配置 | 防火墙规则{Colors.RESET}")
                 return False
-                
-            if response.status_code == 200 or "Fails" not in response.text:
-                self.connected = True
-                print(f"{Colors.GREEN}{Icon.SUCCESS} 成功连接到 {Colors.BRIGHT_WHITE}{self.base_url}{Colors.RESET}")
-                
-                if self.enable_tagging:
-                    self._ensure_tags_exist()
-                
-                self.corner.print_bottom_line()
-                return True
-            else:
-                print(f"{Colors.RED}{Icon.ERROR} 登录失败{Colors.RESET}")
+            except Exception as e:
+                spinner.stop()
+                print(f"{Colors.RED}{Icon.ERROR} 连接异常: {e}{Colors.RESET}")
                 return False
-                
-        except requests.exceptions.ConnectionError:
-            spinner.stop()
-            print(f"{Colors.RED}{Icon.ERROR} 无法连接到 qBittorrent: {self.base_url}{Colors.RESET}")
-            print(f"{Colors.YELLOW}{Icon.WARNING} 请检查: 服务状态 | 端口配置 | 防火墙规则{Colors.RESET}")
-            return False
-        except Exception as e:
-            spinner.stop()
-            print(f"{Colors.RED}{Icon.ERROR} 连接异常: {e}{Colors.RESET}")
-            return False
     
     def _ensure_tags_exist(self):
         try:
@@ -345,14 +443,20 @@ class QBittorrentChecker:
                 if self.problem_tag not in existing_tags:
                     self._create_tag(self.problem_tag)
         except Exception as e:
-            print(f"{Colors.YELLOW}{Icon.WARNING} 标签初始化: {e}{Colors.RESET}")
+            if RICH_AVAILABLE:
+                console.print(f"[yellow]⚠ 标签初始化: {e}[/]")
+            else:
+                print(f"{Colors.YELLOW}{Icon.WARNING} 标签初始化: {e}{Colors.RESET}")
     
     def _create_tag(self, tag_name: str) -> bool:
         try:
             create_url = urljoin(self.base_url, self.api["create_tag"])
             response = self.session.post(create_url, data={"tags": tag_name})
             if response.status_code == 200:
-                print(f"{Colors.GREEN}{Icon.TAG} 创建标签: {tag_name}{Colors.RESET}")
+                if RICH_AVAILABLE:
+                    console.print(f"[green]✓ 创建标签: {tag_name}[/]")
+                else:
+                    print(f"{Colors.GREEN}{Icon.TAG} 创建标签: {tag_name}{Colors.RESET}")
                 return True
         except Exception:
             pass
@@ -455,93 +559,182 @@ class QBittorrentChecker:
     
     def check_tracker_status(self, torrents: List[Dict[str, Any]] = None) -> List[Dict[str, Any]]:
         if not self.connected:
-            print(f"{Colors.RED}{Icon.ERROR} 未连接到 qBittorrent{Colors.RESET}")
+            if RICH_AVAILABLE:
+                console.print("[red]✗ 未连接到 qBittorrent[/]")
+            else:
+                print(f"{Colors.RED}{Icon.ERROR} 未连接到 qBittorrent{Colors.RESET}")
             return []
         
         if torrents is None:
             torrents = self.get_torrents()
         
         if not torrents:
-            print(f"{Colors.YELLOW}{Icon.WARNING} 没有找到任何种子{Colors.RESET}")
+            if RICH_AVAILABLE:
+                console.print("[yellow]⚠ 没有找到任何种子[/]")
+            else:
+                print(f"{Colors.YELLOW}{Icon.WARNING} 没有找到任何种子{Colors.RESET}")
             return []
         
         self.stats["total"] = len(torrents)
         self.stats["start_time"] = datetime.now()
         
-        print(f"\n{Colors.BRIGHT_CYAN}{Icon.SEARCH} 开始扫描 {len(torrents)} 个种子...{Colors.RESET}")
-        print(f"{Colors.DIM}{'='*60}{Colors.RESET}\n")
+        if RICH_AVAILABLE:
+            console.print(f"\n[bold cyan]🔍 开始扫描 {len(torrents)} 个种子...[/]")
+        else:
+            print(f"\n{Colors.BRIGHT_CYAN}{Icon.SEARCH} 开始扫描 {len(torrents)} 个种子...{Colors.RESET}")
+            print(f"{Colors.DIM}{'='*60}{Colors.RESET}\n")
         
         problematic_torrents = []
         normal_torrents = []
         
-        progress = ProgressBar(len(torrents), prefix=f"{Colors.BRIGHT_BLUE}扫描进度{Colors.RESET}")
-        
-        for i, torrent in enumerate(torrents, 1):
-            torrent_name = torrent.get('name', '未知')
-            torrent_hash = torrent.get('hash')
-            progress.update(i)
-            
-            trackers = self.get_torrent_trackers(torrent_hash)
-            
-            if not trackers:
-                continue
-            
-            working_trackers = 0
-            problematic_trackers = []
-            total_real_trackers = 0
-            
-            for tracker in trackers:
-                url = tracker.get('url', '')
-                if url.startswith(('**', '****')):
+        if RICH_AVAILABLE:
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
+                TimeElapsedColumn(),
+                console=console,
+                transient=True
+            ) as progress:
+                task = progress.add_task("[cyan]扫描种子...", total=len(torrents))
+                for torrent in torrents:
+                    torrent_name = torrent.get('name', '未知')
+                    torrent_hash = torrent.get('hash')
+                    
+                    trackers = self.get_torrent_trackers(torrent_hash)
+                    
+                    if not trackers:
+                        progress.update(task, advance=1)
+                        continue
+                    
+                    working_trackers = 0
+                    problematic_trackers = []
+                    total_real_trackers = 0
+                    
+                    for tracker in trackers:
+                        url = tracker.get('url', '')
+                        if url.startswith(('**', '****')):
+                            continue
+                        
+                        total_real_trackers += 1
+                        status = tracker.get('status', -1)
+                        msg = tracker.get('msg', '')
+                        
+                        if status == 2:
+                            working_trackers += 1
+                        else:
+                            problematic_trackers.append({'url': url, 'status': status, 'message': msg})
+                    
+                    self.stats["trackers_checked"] += total_real_trackers
+                    
+                    is_problematic = working_trackers == 0
+                    
+                    if is_problematic:
+                        properties = self.get_torrent_properties(torrent_hash)
+                        files = self.get_torrent_contents(torrent_hash)
+                        
+                        torrent_info = {
+                            'name': torrent_name,
+                            'hash': torrent_hash,
+                            'progress': torrent.get('progress', 0) * 100,
+                            'state': torrent.get('state', 'unknown'),
+                            'save_path': properties.get('save_path', '未知'),
+                            'working_trackers': working_trackers,
+                            'total_trackers': total_real_trackers,
+                            'problematic_trackers': problematic_trackers,
+                            'files': [f.get('name', '') for f in files]
+                        }
+                        problematic_torrents.append(torrent_info)
+                        self.stats["problematic"] += 1
+                        
+                        if self.enable_tagging:
+                            tags = [self.problem_tag]
+                            if self.keep_history:
+                                tags.append(self.normal_tag)
+                            self.set_torrent_tags(torrent_hash, tags)
+                    else:
+                        normal_torrents.append({'name': torrent_name, 'hash': torrent_hash})
+                        self.stats["normal"] += 1
+                        
+                        if self.enable_tagging:
+                            self.set_torrent_tags(torrent_hash, [self.normal_tag])
+                    
+                    self.stats["checked"] += 1
+                    progress.update(task, advance=1)
+                    time.sleep(self.request_delay)
+        else:
+            progress = ProgressBar(len(torrents), prefix=f"{Colors.BRIGHT_BLUE}扫描进度{Colors.RESET}")
+            for i, torrent in enumerate(torrents, 1):
+                torrent_name = torrent.get('name', '未知')
+                torrent_hash = torrent.get('hash')
+                progress.update(i)
+                
+                trackers = self.get_torrent_trackers(torrent_hash)
+                
+                if not trackers:
                     continue
                 
-                total_real_trackers += 1
-                status = tracker.get('status', -1)
-                msg = tracker.get('msg', '')
+                working_trackers = 0
+                problematic_trackers = []
+                total_real_trackers = 0
                 
-                if status == 2:
-                    working_trackers += 1
+                for tracker in trackers:
+                    url = tracker.get('url', '')
+                    if url.startswith(('**', '****')):
+                        continue
+                    
+                    total_real_trackers += 1
+                    status = tracker.get('status', -1)
+                    msg = tracker.get('msg', '')
+                    
+                    if status == 2:
+                        working_trackers += 1
+                    else:
+                        problematic_trackers.append({'url': url, 'status': status, 'message': msg})
+                
+                self.stats["trackers_checked"] += total_real_trackers
+                
+                is_problematic = working_trackers == 0
+                
+                if is_problematic:
+                    properties = self.get_torrent_properties(torrent_hash)
+                    files = self.get_torrent_contents(torrent_hash)
+                    
+                    torrent_info = {
+                        'name': torrent_name,
+                        'hash': torrent_hash,
+                        'progress': torrent.get('progress', 0) * 100,
+                        'state': torrent.get('state', 'unknown'),
+                        'save_path': properties.get('save_path', '未知'),
+                        'working_trackers': working_trackers,
+                        'total_trackers': total_real_trackers,
+                        'problematic_trackers': problematic_trackers,
+                        'files': [f.get('name', '') for f in files]
+                    }
+                    problematic_torrents.append(torrent_info)
+                    self.stats["problematic"] += 1
+                    
+                    if self.enable_tagging:
+                        tags = [self.problem_tag]
+                        if self.keep_history:
+                            tags.append(self.normal_tag)
+                        self.set_torrent_tags(torrent_hash, tags)
                 else:
-                    problematic_trackers.append({'url': url, 'status': status, 'message': msg})
-            
-            self.stats["trackers_checked"] += total_real_trackers
-            
-            is_problematic = working_trackers == 0
-            
-            if is_problematic:
-                properties = self.get_torrent_properties(torrent_hash)
-                files = self.get_torrent_contents(torrent_hash)
+                    normal_torrents.append({'name': torrent_name, 'hash': torrent_hash})
+                    self.stats["normal"] += 1
+                    
+                    if self.enable_tagging:
+                        self.set_torrent_tags(torrent_hash, [self.normal_tag])
                 
-                torrent_info = {
-                    'name': torrent_name,
-                    'hash': torrent_hash,
-                    'progress': torrent.get('progress', 0) * 100,
-                    'state': torrent.get('state', 'unknown'),
-                    'save_path': properties.get('save_path', '未知'),
-                    'working_trackers': working_trackers,
-                    'total_trackers': total_real_trackers,
-                    'problematic_trackers': problematic_trackers,
-                    'files': [f.get('name', '') for f in files]
-                }
-                problematic_torrents.append(torrent_info)
-                self.stats["problematic"] += 1
-                
-                if self.enable_tagging:
-                    tags = [self.problem_tag]
-                    if self.keep_history:
-                        tags.append(self.normal_tag)
-                    self.set_torrent_tags(torrent_hash, tags)
-            else:
-                normal_torrents.append({'name': torrent_name, 'hash': torrent_hash})
-                self.stats["normal"] += 1
-                
-                if self.enable_tagging:
-                    self.set_torrent_tags(torrent_hash, [self.normal_tag])
-            
-            self.stats["checked"] = i
-            time.sleep(self.request_delay)
+                self.stats["checked"] = i
+                time.sleep(self.request_delay)
         
-        print()
+        if RICH_AVAILABLE:
+            console.print()  # 换行
+        else:
+            print()
+        
         self._print_check_summary(problematic_torrents, normal_torrents)
         
         return problematic_torrents
@@ -549,133 +742,234 @@ class QBittorrentChecker:
     def _print_check_summary(self, problematic: List, normal: List):
         elapsed = (datetime.now() - self.stats["start_time"]).total_seconds()
         
-        print(f"\n{Colors.BRIGHT_CYAN}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 60}{Icon.TOP_RIGHT}{Colors.RESET}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_WHITE}📊 扫描报告{Colors.RESET}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.DIM}{'─' * 50}{Colors.RESET}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_YELLOW}种子总数{Colors.RESET}:     {self.stats['total']}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_GREEN}正常种子{Colors.RESET}:     {self.stats['normal']} {Colors.GREEN}{Icon.SUCCESS}{Colors.RESET}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_RED}问题种子{Colors.RESET}:     {self.stats['problematic']} {Colors.RED}{Icon.ERROR if self.stats['problematic'] > 0 else ''}{Colors.RESET}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_BLUE}Tracker检查{Colors.RESET}:   {self.stats['trackers_checked']}")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_MAGENTA}耗时{Colors.RESET}:         {elapsed:.2f}s")
-        print(f"{Colors.BRIGHT_CYAN}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 60}{Icon.BOTTOM_RIGHT}{Colors.RESET}")
-        
-        self.corner.print_bottom_line()
+        if RICH_AVAILABLE:
+            # 创建统计表格
+            summary_table = Table(title="📊 扫描报告", title_style="bold cyan", border_style="bright_blue")
+            summary_table.add_column("项目", style="bold", width=15)
+            summary_table.add_column("数值", justify="right", style="bright_yellow")
+            
+            summary_table.add_row("种子总数", str(self.stats['total']))
+            summary_table.add_row("正常种子", f"{self.stats['normal']} ✓")
+            summary_table.add_row("问题种子", f"{self.stats['problematic']} ✗" if self.stats['problematic'] > 0 else "0")
+            summary_table.add_row("Tracker检查", str(self.stats['trackers_checked']))
+            summary_table.add_row("耗时", f"{elapsed:.2f}s")
+            
+            console.print(summary_table)
+            console.print(Panel("🐧 老司机  💬 156586507", style="dim", border_style="bright_blue"))
+        else:
+            print(f"\n{Colors.BRIGHT_CYAN}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 60}{Icon.TOP_RIGHT}{Colors.RESET}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_WHITE}📊 扫描报告{Colors.RESET}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.DIM}{'─' * 50}{Colors.RESET}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_YELLOW}种子总数{Colors.RESET}:     {self.stats['total']}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_GREEN}正常种子{Colors.RESET}:     {self.stats['normal']} {Colors.GREEN}{Icon.SUCCESS}{Colors.RESET}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_RED}问题种子{Colors.RESET}:     {self.stats['problematic']} {Colors.RED}{Icon.ERROR if self.stats['problematic'] > 0 else ''}{Colors.RESET}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_BLUE}Tracker检查{Colors.RESET}:   {self.stats['trackers_checked']}")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_MAGENTA}耗时{Colors.RESET}:         {elapsed:.2f}s")
+            print(f"{Colors.BRIGHT_CYAN}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 60}{Icon.BOTTOM_RIGHT}{Colors.RESET}")
+            self.corner.print_bottom_line()
     
     def print_problematic_torrents(self, problematic_torrents: List[Dict[str, Any]]):
         if not problematic_torrents:
-            print(f"\n{Colors.BRIGHT_GREEN}{Icon.STAR} 所有种子状态正常！{Colors.RESET}")
-            self.corner.print_bottom_line()
+            if RICH_AVAILABLE:
+                console.print(Panel("[green]✨ 所有种子状态正常！[/]", border_style="green"))
+            else:
+                print(f"\n{Colors.BRIGHT_GREEN}{Icon.STAR} 所有种子状态正常！{Colors.RESET}")
+                self.corner.print_bottom_line()
             return
         
-        print(f"\n{Colors.BRIGHT_RED}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 70}{Icon.TOP_RIGHT}{Colors.RESET}")
-        print(f"{Colors.BRIGHT_RED}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_RED}{Icon.WARNING} 发现 {len(problematic_torrents)} 个问题种子 {Colors.RESET}")
-        print(f"{Colors.BRIGHT_RED}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 70}{Icon.BOTTOM_RIGHT}{Colors.RESET}\n")
-        
-        for i, t in enumerate(problematic_torrents, 1):
-            status_color = Colors.BRIGHT_RED if t['progress'] < 100 else Colors.BRIGHT_YELLOW
-            print(f"{Colors.BRIGHT_CYAN}[{i:2d}]{Colors.RESET} {Colors.BRIGHT_WHITE}{t['name'][:55]}{Colors.RESET}")
-            print(f"      {Colors.DIM}{Icon.PIPE} 进度: {status_color}{t['progress']:.1f}%{Colors.RESET}  |  状态: {t['state']}")
-            print(f"      {Colors.DIM}{Icon.PIPE} Tracker: {Colors.RED}0/{t['total_trackers']}{Colors.RESET} 正常工作")
-            print(f"      {Colors.DIM}{Icon.PIPE} 路径: {t['save_path'][:50]}{Colors.RESET}")
+        if RICH_AVAILABLE:
+            table = Table(title=f"[bold red]发现 {len(problematic_torrents)} 个问题种子[/]", 
+                          title_style="bold red", 
+                          border_style="red",
+                          show_header=True,
+                          header_style="bold cyan")
+            table.add_column("序号", style="dim", width=4)
+            table.add_column("种子名称", style="white", no_wrap=False, max_width=60)
+            table.add_column("进度", justify="right", style="yellow")
+            table.add_column("状态", style="magenta")
+            table.add_column("Tracker", justify="center", style="red")
             
-            if SHOW_FILE_DETAILS and t['files']:
-                print(f"      {Colors.DIM}{Icon.PIPE} 文件: {', '.join(t['files'][:3])}{Colors.RESET}")
-                if len(t['files']) > 3:
-                    print(f"      {Colors.DIM}{Icon.PIPE}        ... 还有 {len(t['files']) - 3} 个文件{Colors.RESET}")
-            print()
-        
-        self.corner.print_bottom_line()
+            for i, t in enumerate(problematic_torrents, 1):
+                progress_str = f"{t['progress']:.1f}%"
+                tracker_str = f"0/{t['total_trackers']}"
+                table.add_row(str(i), t['name'][:60], progress_str, t['state'], tracker_str)
+            
+            console.print(table)
+            # 显示部分详细路径
+            console.print("\n[dim]📁 保存路径示例:[/]")
+            for t in problematic_torrents[:3]:
+                console.print(f"  [dim]{t['save_path'][:80]}[/]")
+            if len(problematic_torrents) > 3:
+                console.print(f"  [dim]... 还有 {len(problematic_torrents)-3} 个[/]")
+            console.print(Panel("🐧 老司机  💬 156586507", style="dim", border_style="bright_blue"))
+        else:
+            print(f"\n{Colors.BRIGHT_RED}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 70}{Icon.TOP_RIGHT}{Colors.RESET}")
+            print(f"{Colors.BRIGHT_RED}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_RED}{Icon.WARNING} 发现 {len(problematic_torrents)} 个问题种子 {Colors.RESET}")
+            print(f"{Colors.BRIGHT_RED}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 70}{Icon.BOTTOM_RIGHT}{Colors.RESET}\n")
+            
+            for i, t in enumerate(problematic_torrents, 1):
+                status_color = Colors.BRIGHT_RED if t['progress'] < 100 else Colors.BRIGHT_YELLOW
+                print(f"{Colors.BRIGHT_CYAN}[{i:2d}]{Colors.RESET} {Colors.BRIGHT_WHITE}{t['name'][:55]}{Colors.RESET}")
+                print(f"      {Colors.DIM}{Icon.PIPE} 进度: {status_color}{t['progress']:.1f}%{Colors.RESET}  |  状态: {t['state']}")
+                print(f"      {Colors.DIM}{Icon.PIPE} Tracker: {Colors.RED}0/{t['total_trackers']}{Colors.RESET} 正常工作")
+                print(f"      {Colors.DIM}{Icon.PIPE} 路径: {t['save_path'][:50]}{Colors.RESET}")
+                if SHOW_FILE_DETAILS and t['files']:
+                    print(f"      {Colors.DIM}{Icon.PIPE} 文件: {', '.join(t['files'][:3])}{Colors.RESET}")
+                    if len(t['files']) > 3:
+                        print(f"      {Colors.DIM}{Icon.PIPE}        ... 还有 {len(t['files']) - 3} 个文件{Colors.RESET}")
+                print()
+            
+            self.corner.print_bottom_line()
     
     def batch_delete_torrents(self, torrent_hashes: List[str], delete_files: bool = False) -> Dict[str, bool]:
         results = {}
         action = "删除文件" if delete_files else "保留文件"
         
-        print(f"\n{Colors.YELLOW}{Icon.TRASH} 批量删除 {len(torrent_hashes)} 个种子 ({action}){Colors.RESET}")
-        
-        progress = ProgressBar(len(torrent_hashes), prefix=f"{Colors.BRIGHT_RED}删除进度{Colors.RESET}")
-        
-        for i, h in enumerate(torrent_hashes, 1):
-            progress.update(i)
-            results[h] = self.delete_torrent(h, delete_files)
-            time.sleep(self.batch_delay)
+        if RICH_AVAILABLE:
+            console.print(f"\n[yellow]🗑 批量删除 {len(torrent_hashes)} 个种子 ({action})[/]")
+            with Progress(
+                SpinnerColumn(),
+                TextColumn("[progress.description]{task.description}"),
+                BarColumn(),
+                console=console,
+                transient=True
+            ) as progress:
+                task = progress.add_task("[red]删除中...", total=len(torrent_hashes))
+                for h in torrent_hashes:
+                    results[h] = self.delete_torrent(h, delete_files)
+                    progress.update(task, advance=1)
+                    time.sleep(self.batch_delay)
+        else:
+            print(f"\n{Colors.YELLOW}{Icon.TRASH} 批量删除 {len(torrent_hashes)} 个种子 ({action}){Colors.RESET}")
+            progress = ProgressBar(len(torrent_hashes), prefix=f"{Colors.BRIGHT_RED}删除进度{Colors.RESET}")
+            for i, h in enumerate(torrent_hashes, 1):
+                progress.update(i)
+                results[h] = self.delete_torrent(h, delete_files)
+                time.sleep(self.batch_delay)
         
         success = sum(1 for v in results.values() if v)
-        print(f"\n{Colors.GREEN}{Icon.SUCCESS} 删除完成: {success}/{len(torrent_hashes)} 成功{Colors.RESET}")
+        if RICH_AVAILABLE:
+            console.print(f"[green]✓ 删除完成: {success}/{len(torrent_hashes)} 成功[/]")
+        else:
+            print(f"\n{Colors.GREEN}{Icon.SUCCESS} 删除完成: {success}/{len(torrent_hashes)} 成功{Colors.RESET}")
         
-        self.corner.print_bottom_line()
         return results
 
 
 # ============================================================================
-# 交互式输入配置
+# 交互式输入配置（使用 Rich 美化版）
 # ============================================================================
 
 def get_config_interactive():
     """交互式获取连接配置"""
-    print(f"\n{Colors.BRIGHT_CYAN}{'='*60}{Colors.RESET}")
-    print(f"{Colors.BRIGHT_MAGENTA}{Icon.SETTINGS} 请填写 qBittorrent 连接信息{Colors.RESET}")
-    print(f"{Colors.BRIGHT_CYAN}{'='*60}{Colors.RESET}\n")
-    
-    # 获取主机地址（带提醒：不包含端口）
-    print(f"{Colors.BRIGHT_YELLOW}{Icon.NETWORK} 主机地址{Colors.RESET} {Colors.DIM}(IP地址或域名，不包含端口){Colors.RESET}")
-    host = input(f"{Colors.BRIGHT_YELLOW}  └─ 例如: localhost 或 192.168.1.100{Colors.RESET}\n    > ").strip()
-    if not host:
-        host = "localhost"
-        print(f"{Colors.DIM}    使用默认值: localhost{Colors.RESET}")
-    
-    # 获取端口
-    print(f"\n{Colors.BRIGHT_YELLOW}{Icon.BOX} Web UI 端口{Colors.RESET} {Colors.DIM}(qBittorrent Web界面端口){Colors.RESET}")
-    port_input = input(f"{Colors.BRIGHT_YELLOW}  └─ 例如: 8080 或 7001{Colors.RESET}\n    > ").strip()
-    if not port_input:
-        port = 8080
-        print(f"{Colors.DIM}    使用默认值: 8080{Colors.RESET}")
-    else:
+    if RICH_AVAILABLE:
+        console.print(Panel.fit("[bold magenta]⚙ 请填写 qBittorrent 连接信息[/]", border_style="bright_blue"))
+        console.print()
+        
+        host = Prompt.ask("[bold yellow]🌐 主机地址[/] [dim](IP或域名，不含端口)[/]", default="localhost")
+        port = Prompt.ask("[bold yellow]📦 Web UI 端口[/] [dim](例如 8080)[/]", default="8080")
         try:
-            port = int(port_input)
+            port = int(port)
         except ValueError:
-            print(f"{Colors.RED}{Icon.ERROR} 端口必须是数字，使用默认值 8080{Colors.RESET}")
             port = 8080
-    
-    # 是否使用 HTTPS
-    print(f"\n{Colors.BRIGHT_YELLOW}{Icon.LOCK} 是否使用 HTTPS?{Colors.RESET} {Colors.DIM}(如果启用了SSL证书){Colors.RESET}")
-    https_input = input(f"{Colors.BRIGHT_YELLOW}  └─ [y/N]: {Colors.RESET}").strip().lower()
-    use_https = https_input in ['y', 'yes', 'true']
-    
-    # 是否需要验证
-    print(f"\n{Colors.DIM}{'─'*50}{Colors.RESET}")
-    print(f"{Colors.BRIGHT_YELLOW}{Icon.USER} 是否需要用户名密码验证?{Colors.RESET} {Colors.DIM}(如果启用了Web UI认证){Colors.RESET}")
-    auth_input = input(f"{Colors.BRIGHT_YELLOW}  └─ [y/N]: {Colors.RESET}").strip().lower()
-    
-    username = ""
-    password = ""
-    
-    if auth_input in ['y', 'yes', 'true']:
+        
+        use_https = Confirm.ask("[bold yellow]🔒 是否使用 HTTPS?[/]", default=False)
+        
+        need_auth = Confirm.ask("[bold yellow]👤 是否需要用户名密码验证?[/]", default=False)
+        username = ""
+        password = ""
+        if need_auth:
+            username = Prompt.ask("[bold yellow]👤 用户名[/]")
+            password = Prompt.ask("[bold yellow]🔐 密码[/]", password=True)
+        
+        console.print("\n[green]✓ 连接配置摘要:[/]")
+        console.print(f"  主机: {host}")
+        console.print(f"  端口: {port}")
+        console.print(f"  HTTPS: {'是' if use_https else '否'}")
+        console.print(f"  认证: {'是 (用户名: ' + username + ')' if username else '否'}")
+        console.print()
+        
+        return {
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "use_https": use_https
+        }
+    else:
+        # 原有的交互式输入（无 Rich）
+        print(f"\n{Colors.BRIGHT_CYAN}{'='*60}{Colors.RESET}")
+        print(f"{Colors.BRIGHT_MAGENTA}{Icon.SETTINGS} 请填写 qBittorrent 连接信息{Colors.RESET}")
+        print(f"{Colors.BRIGHT_CYAN}{'='*60}{Colors.RESET}\n")
+        
+        print(f"{Colors.BRIGHT_YELLOW}{Icon.NETWORK} 主机地址{Colors.RESET} {Colors.DIM}(IP地址或域名，不包含端口){Colors.RESET}")
+        host = input(f"{Colors.BRIGHT_YELLOW}  └─ 例如: localhost 或 192.168.1.100{Colors.RESET}\n    > ").strip()
+        if not host:
+            host = "localhost"
+            print(f"{Colors.DIM}    使用默认值: localhost{Colors.RESET}")
+        
+        print(f"\n{Colors.BRIGHT_YELLOW}{Icon.BOX} Web UI 端口{Colors.RESET} {Colors.DIM}(qBittorrent Web界面端口){Colors.RESET}")
+        port_input = input(f"{Colors.BRIGHT_YELLOW}  └─ 例如: 8080 或 7001{Colors.RESET}\n    > ").strip()
+        if not port_input:
+            port = 8080
+            print(f"{Colors.DIM}    使用默认值: 8080{Colors.RESET}")
+        else:
+            try:
+                port = int(port_input)
+            except ValueError:
+                print(f"{Colors.RED}{Icon.ERROR} 端口必须是数字，使用默认值 8080{Colors.RESET}")
+                port = 8080
+        
+        print(f"\n{Colors.BRIGHT_YELLOW}{Icon.LOCK} 是否使用 HTTPS?{Colors.RESET} {Colors.DIM}(如果启用了SSL证书){Colors.RESET}")
+        https_input = input(f"{Colors.BRIGHT_YELLOW}  └─ [y/N]: {Colors.RESET}").strip().lower()
+        use_https = https_input in ['y', 'yes', 'true']
+        
+        print(f"\n{Colors.DIM}{'─'*50}{Colors.RESET}")
+        print(f"{Colors.BRIGHT_YELLOW}{Icon.USER} 是否需要用户名密码验证?{Colors.RESET} {Colors.DIM}(如果启用了Web UI认证){Colors.RESET}")
+        auth_input = input(f"{Colors.BRIGHT_YELLOW}  └─ [y/N]: {Colors.RESET}").strip().lower()
+        
+        username = ""
+        password = ""
+        
+        if auth_input in ['y', 'yes', 'true']:
+            print()
+            username = input(f"{Colors.BRIGHT_YELLOW}{Icon.USER} 用户名{Colors.RESET}\n    > ").strip()
+            password = getpass.getpass(f"{Colors.BRIGHT_YELLOW}{Icon.LOCK} 密码{Colors.RESET} (输入不可见)\n    > ")
+        
         print()
-        username = input(f"{Colors.BRIGHT_YELLOW}{Icon.USER} 用户名{Colors.RESET}\n    > ").strip()
-        password = getpass.getpass(f"{Colors.BRIGHT_YELLOW}{Icon.LOCK} 密码{Colors.RESET} (输入不可见)\n    > ")
-    
-    print()
-    
-    # 显示配置摘要
-    print(f"{Colors.BRIGHT_GREEN}{Icon.CHECK} 连接配置摘要:{Colors.RESET}")
-    print(f"  {Colors.DIM}主机: {Colors.RESET}{host}")
-    print(f"  {Colors.DIM}端口: {Colors.RESET}{port}")
-    print(f"  {Colors.DIM}HTTPS: {Colors.RESET}{'是' if use_https else '否'}")
-    print(f"  {Colors.DIM}认证: {Colors.RESET}{'是 (用户名: ' + username + ')' if username else '否'}")
-    print()
-    
-    return {
-        "host": host,
-        "port": port,
-        "username": username,
-        "password": password,
-        "use_https": use_https
-    }
+        
+        print(f"{Colors.BRIGHT_GREEN}{Icon.CHECK} 连接配置摘要:{Colors.RESET}")
+        print(f"  {Colors.DIM}主机: {Colors.RESET}{host}")
+        print(f"  {Colors.DIM}端口: {Colors.RESET}{port}")
+        print(f"  {Colors.DIM}HTTPS: {Colors.RESET}{'是' if use_https else '否'}")
+        print(f"  {Colors.DIM}认证: {Colors.RESET}{'是 (用户名: ' + username + ')' if username else '否'}")
+        print()
+        
+        return {
+            "host": host,
+            "port": port,
+            "username": username,
+            "password": password,
+            "use_https": use_https
+        }
 
 
 def print_menu():
-    """打印主菜单"""
-    menu = f"""
+    """打印主菜单（美化版）"""
+    if RICH_AVAILABLE:
+        menu_text = """
+[bold cyan]1[/] 🔍 重新检查 Tracker 状态
+[bold cyan]2[/] 📊 显示问题种子列表
+[bold cyan]3[/] 🛠️ 对问题种子执行操作
+[bold cyan]4[/] 🔄 重新连接 qBittorrent
+[bold cyan]5[/] 📈 显示种子统计
+[bold cyan]6[/] ⏸️ 批量管理种子
+[bold cyan]0[/] 🚪 退出程序
+        """
+        panel = Panel(menu_text, title="[bold magenta]QBITTRACKER 控制台[/]", border_style="bright_blue", padding=(1, 2))
+        console.print(panel)
+    else:
+        menu = f"""
 {Colors.BRIGHT_CYAN}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 50}{Icon.TOP_RIGHT}{Colors.RESET}
 {Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_MAGENTA}{Icon.TERMINAL} QBITTRACKER 控制台{Colors.RESET}
 {Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.DIM}{'─' * 44}{Colors.RESET}
@@ -688,15 +982,13 @@ def print_menu():
 {Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_GREEN}0{Colors.RESET} 🚪 退出程序
 {Colors.BRIGHT_CYAN}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 50}{Icon.BOTTOM_RIGHT}{Colors.RESET}
 """
-    print(menu)
+        print(menu)
 
 
 def interactive_mode():
-    """交互式模式"""
-    # 获取连接配置
+    """交互式模式（美化版）"""
     config = get_config_interactive()
     
-    # 创建检查器
     checker = QBittorrentChecker(
         host=config["host"],
         port=config["port"],
@@ -706,12 +998,20 @@ def interactive_mode():
     )
     
     if not checker.connect():
-        print(f"\n{Colors.RED}{Icon.ERROR} 连接失败，请检查配置后重新运行{Colors.RESET}")
-        input(f"\n{Colors.DIM}按回车键退出...{Colors.RESET}")
+        if RICH_AVAILABLE:
+            console.print("[red]✗ 连接失败，请检查配置后重新运行[/]")
+            input("\n按 Enter 键退出...")
+        else:
+            print(f"\n{Colors.RED}{Icon.ERROR} 连接失败，请检查配置后重新运行{Colors.RESET}")
+            input(f"\n{Colors.DIM}按回车键退出...{Colors.RESET}")
         return
     
     # 初始扫描
-    print(f"\n{Colors.BRIGHT_BLUE}{Icon.BOLT} 执行初始扫描...{Colors.RESET}")
+    if RICH_AVAILABLE:
+        console.print("[bold blue]⚡ 执行初始扫描...[/]")
+    else:
+        print(f"\n{Colors.BRIGHT_BLUE}{Icon.BOLT} 执行初始扫描...{Colors.RESET}")
+    
     torrents = checker.get_torrents(filter=DEFAULT_FILTER)
     problematic = checker.check_tracker_status(torrents)
     checker.print_problematic_torrents(problematic)
@@ -719,17 +1019,27 @@ def interactive_mode():
     # 主循环
     while True:
         print_menu()
-        choice = input(f"{Colors.BRIGHT_CYAN}{Icon.TERMINAL} 选择操作 [0-6]: {Colors.RESET}").strip()
+        if RICH_AVAILABLE:
+            choice = Prompt.ask("[bold cyan]〉 选择操作 [0-6][/]", choices=["0","1","2","3","4","5","6"], default="0")
+        else:
+            choice = input(f"{Colors.BRIGHT_CYAN}{Icon.TERMINAL} 选择操作 [0-6]: {Colors.RESET}").strip()
         
         if choice == "0":
-            print(f"\n{Colors.BRIGHT_MAGENTA}{Icon.HEART} 感谢使用 QBITTRACKER！{Colors.RESET}")
-            print(f"{Colors.DIM}🐧 作者: 老司机  💬 QQ群: 156586507{Colors.RESET}\n")
+            if RICH_AVAILABLE:
+                console.print("\n[bold magenta]♥ 感谢使用 QBITTRACKER！[/]")
+                console.print("[dim]🐧 作者: 老司机  💬 QQ群: 156586507[/]\n")
+            else:
+                print(f"\n{Colors.BRIGHT_MAGENTA}{Icon.HEART} 感谢使用 QBITTRACKER！{Colors.RESET}")
+                print(f"{Colors.DIM}🐧 作者: 老司机  💬 QQ群: 156586507{Colors.RESET}\n")
             break
         
         elif choice == "1":
-            filter_choice = input(f"{Colors.DIM}检查范围 [all/downloading/completed/paused/active/inactive] [默认: all]: {Colors.RESET}").strip()
-            if not filter_choice:
-                filter_choice = "all"
+            if RICH_AVAILABLE:
+                filter_choice = Prompt.ask("[dim]检查范围[/]", choices=["all","downloading","completed","paused","active","inactive"], default="all")
+            else:
+                filter_choice = input(f"{Colors.DIM}检查范围 [all/downloading/completed/paused/active/inactive] [默认: all]: {Colors.RESET}").strip()
+                if not filter_choice:
+                    filter_choice = "all"
             torrents = checker.get_torrents(filter=filter_choice)
             problematic = checker.check_tracker_status(torrents)
             checker.print_problematic_torrents(problematic)
@@ -739,55 +1049,98 @@ def interactive_mode():
         
         elif choice == "3":
             if not problematic:
-                print(f"{Colors.YELLOW}{Icon.WARNING} 没有问题种子可操作{Colors.RESET}")
+                if RICH_AVAILABLE:
+                    console.print("[yellow]⚠ 没有问题种子可操作[/]")
+                else:
+                    print(f"{Colors.YELLOW}{Icon.WARNING} 没有问题种子可操作{Colors.RESET}")
                 continue
             
-            print(f"\n{Colors.BRIGHT_CYAN}🔧 操作选项:{Colors.RESET}")
-            print("  1. 重新宣布所有问题种子")
-            print("  2. 删除所有问题种子 (保留文件)")
-            print("  3. 删除所有问题种子及文件")
-            print("  4. 暂停所有问题种子")
-            print("  5. 恢复所有问题种子")
-            print("  6. 返回")
-            
-            action = input(f"{Colors.BRIGHT_CYAN}{Icon.TERMINAL} 选择操作 [1-6]: {Colors.RESET}").strip()
+            if RICH_AVAILABLE:
+                console.print("\n[bold cyan]🔧 操作选项:[/]")
+                console.print("  1. 重新宣布所有问题种子")
+                console.print("  2. 删除所有问题种子 (保留文件)")
+                console.print("  3. 删除所有问题种子及文件")
+                console.print("  4. 暂停所有问题种子")
+                console.print("  5. 恢复所有问题种子")
+                console.print("  6. 返回")
+                action = Prompt.ask("[bold cyan]〉 选择操作 [1-6][/]", choices=["1","2","3","4","5","6"], default="6")
+            else:
+                print(f"\n{Colors.BRIGHT_CYAN}🔧 操作选项:{Colors.RESET}")
+                print("  1. 重新宣布所有问题种子")
+                print("  2. 删除所有问题种子 (保留文件)")
+                print("  3. 删除所有问题种子及文件")
+                print("  4. 暂停所有问题种子")
+                print("  5. 恢复所有问题种子")
+                print("  6. 返回")
+                action = input(f"{Colors.BRIGHT_CYAN}{Icon.TERMINAL} 选择操作 [1-6]: {Colors.RESET}").strip()
             
             if action == "1":
                 for t in problematic:
                     if checker.force_reannounce(t['hash']):
-                        print(f"  {Colors.GREEN}{Icon.SUCCESS} 已宣布: {t['name'][:40]}{Colors.RESET}")
+                        if RICH_AVAILABLE:
+                            console.print(f"  [green]✓ 已宣布: {t['name'][:40]}[/]")
+                        else:
+                            print(f"  {Colors.GREEN}{Icon.SUCCESS} 已宣布: {t['name'][:40]}{Colors.RESET}")
                     else:
-                        print(f"  {Colors.RED}{Icon.ERROR} 失败: {t['name'][:40]}{Colors.RESET}")
+                        if RICH_AVAILABLE:
+                            console.print(f"  [red]✗ 失败: {t['name'][:40]}[/]")
+                        else:
+                            print(f"  {Colors.RED}{Icon.ERROR} 失败: {t['name'][:40]}{Colors.RESET}")
                     time.sleep(0.3)
             elif action == "2":
-                confirm = input(f"{Colors.RED}{Icon.WARNING} 确认删除 {len(problematic)} 个种子？(yes/no): {Colors.RESET}")
-                if confirm.lower() == 'yes':
-                    checker.batch_delete_torrents([t['hash'] for t in problematic], delete_files=False)
-                    problematic = []
+                if RICH_AVAILABLE:
+                    if Confirm.ask(f"[red]⚠ 确认删除 {len(problematic)} 个种子？[/]", default=False):
+                        checker.batch_delete_torrents([t['hash'] for t in problematic], delete_files=False)
+                        problematic = []
+                else:
+                    confirm = input(f"{Colors.RED}{Icon.WARNING} 确认删除 {len(problematic)} 个种子？(yes/no): {Colors.RESET}")
+                    if confirm.lower() == 'yes':
+                        checker.batch_delete_torrents([t['hash'] for t in problematic], delete_files=False)
+                        problematic = []
             elif action == "3":
-                confirm = input(f"{Colors.RED}{Icon.WARNING} 确认删除种子及文件？(yes/no): {Colors.RESET}")
-                if confirm.lower() == 'yes':
-                    checker.batch_delete_torrents([t['hash'] for t in problematic], delete_files=True)
-                    problematic = []
+                if RICH_AVAILABLE:
+                    if Confirm.ask(f"[red]⚠ 确认删除种子及文件？[/]", default=False):
+                        checker.batch_delete_torrents([t['hash'] for t in problematic], delete_files=True)
+                        problematic = []
+                else:
+                    confirm = input(f"{Colors.RED}{Icon.WARNING} 确认删除种子及文件？(yes/no): {Colors.RESET}")
+                    if confirm.lower() == 'yes':
+                        checker.batch_delete_torrents([t['hash'] for t in problematic], delete_files=True)
+                        problematic = []
             elif action == "4":
                 for t in problematic:
                     checker.pause_torrent(t['hash'])
-                    print(f"  {Colors.YELLOW}{Icon.DOWNLOAD} 已暂停: {t['name'][:40]}{Colors.RESET}")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [yellow]⏸ 已暂停: {t['name'][:40]}[/]")
+                    else:
+                        print(f"  {Colors.YELLOW}{Icon.DOWNLOAD} 已暂停: {t['name'][:40]}{Colors.RESET}")
             elif action == "5":
                 for t in problematic:
                     checker.resume_torrent(t['hash'])
-                    print(f"  {Colors.GREEN}{Icon.UPLOAD} 已恢复: {t['name'][:40]}{Colors.RESET}")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [green]▶ 已恢复: {t['name'][:40]}[/]")
+                    else:
+                        print(f"  {Colors.GREEN}{Icon.UPLOAD} 已恢复: {t['name'][:40]}{Colors.RESET}")
         
         elif choice == "4":
-            print(f"\n{Colors.BRIGHT_BLUE}{Icon.BOLT} 重新连接...{Colors.RESET}")
+            if RICH_AVAILABLE:
+                console.print("[bold blue]⚡ 重新连接...[/]")
+            else:
+                print(f"\n{Colors.BRIGHT_BLUE}{Icon.BOLT} 重新连接...{Colors.RESET}")
             checker.connected = False
             if checker.connect():
-                print(f"{Colors.GREEN}{Icon.SUCCESS} 重新连接成功{Colors.RESET}")
+                if RICH_AVAILABLE:
+                    console.print("[green]✓ 重新连接成功[/]")
+                else:
+                    print(f"{Colors.GREEN}{Icon.SUCCESS} 重新连接成功{Colors.RESET}")
                 torrents = checker.get_torrents()
                 problematic = checker.check_tracker_status(torrents)
                 checker.print_problematic_torrents(problematic)
             else:
-                print(f"{Colors.RED}{Icon.ERROR} 重新连接失败{Colors.RESET}")
+                if RICH_AVAILABLE:
+                    console.print("[red]✗ 重新连接失败[/]")
+                else:
+                    print(f"{Colors.RED}{Icon.ERROR} 重新连接失败{Colors.RESET}")
         
         elif choice == "5":
             torrents = checker.get_torrents()
@@ -798,52 +1151,98 @@ def interactive_mode():
                 paused = sum(1 for t in torrents if t.get('state') == 'pausedDL')
                 completed = sum(1 for t in torrents if t.get('progress', 0) == 1)
                 
-                print(f"\n{Colors.BRIGHT_CYAN}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 45}{Icon.TOP_RIGHT}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_WHITE}📊 种子统计{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.DIM}{'─' * 39}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  总种子数:   {Colors.BRIGHT_YELLOW}{total}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  正在下载:   {Colors.BRIGHT_BLUE}{downloading}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  正在做种:   {Colors.BRIGHT_GREEN}{seeding}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  已暂停:     {Colors.BRIGHT_MAGENTA}{paused}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  已完成:     {Colors.BRIGHT_CYAN}{completed}{Colors.RESET}")
-                if problematic:
-                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  问题种子:   {Colors.BRIGHT_RED}{len(problematic)}{Colors.RESET}")
-                print(f"{Colors.BRIGHT_CYAN}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 45}{Icon.BOTTOM_RIGHT}{Colors.RESET}\n")
-                checker.corner.print_bottom_line()
+                if RICH_AVAILABLE:
+                    stats_table = Table(title="📊 种子统计", title_style="bold cyan", border_style="bright_blue")
+                    stats_table.add_column("项目", style="bold", width=15)
+                    stats_table.add_column("数量", justify="right", style="bright_yellow")
+                    stats_table.add_row("总种子数", str(total))
+                    stats_table.add_row("正在下载", str(downloading))
+                    stats_table.add_row("正在做种", str(seeding))
+                    stats_table.add_row("已暂停", str(paused))
+                    stats_table.add_row("已完成", str(completed))
+                    if problematic:
+                        stats_table.add_row("问题种子", f"[red]{len(problematic)}[/]")
+                    console.print(stats_table)
+                else:
+                    print(f"\n{Colors.BRIGHT_CYAN}{Icon.TOP_LEFT}{Icon.HORIZONTAL * 45}{Icon.TOP_RIGHT}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.BRIGHT_WHITE}📊 种子统计{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  {Colors.DIM}{'─' * 39}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  总种子数:   {Colors.BRIGHT_YELLOW}{total}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  正在下载:   {Colors.BRIGHT_BLUE}{downloading}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  正在做种:   {Colors.BRIGHT_GREEN}{seeding}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  已暂停:     {Colors.BRIGHT_MAGENTA}{paused}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  已完成:     {Colors.BRIGHT_CYAN}{completed}{Colors.RESET}")
+                    if problematic:
+                        print(f"{Colors.BRIGHT_CYAN}{Icon.VERTICAL}{Colors.RESET}  问题种子:   {Colors.BRIGHT_RED}{len(problematic)}{Colors.RESET}")
+                    print(f"{Colors.BRIGHT_CYAN}{Icon.BOTTOM_LEFT}{Icon.HORIZONTAL * 45}{Icon.BOTTOM_RIGHT}{Colors.RESET}\n")
         
         elif choice == "6":
-            print(f"\n{Colors.BRIGHT_CYAN}⏸️▶️ 种子管理:{Colors.RESET}")
-            print("  1. 暂停所有种子")
-            print("  2. 恢复所有种子")
-            print("  3. 暂停问题种子")
-            print("  4. 恢复问题种子")
-            
-            mgmt = input(f"{Colors.BRIGHT_CYAN}{Icon.TERMINAL} 选择操作: {Colors.RESET}").strip()
+            if RICH_AVAILABLE:
+                console.print("\n[bold cyan]⏸️▶️ 种子管理:[/]")
+                console.print("  1. 暂停所有种子")
+                console.print("  2. 恢复所有种子")
+                console.print("  3. 暂停问题种子")
+                console.print("  4. 恢复问题种子")
+                mgmt = Prompt.ask("[bold cyan]〉 选择操作[/]", choices=["1","2","3","4"], default="1")
+            else:
+                print(f"\n{Colors.BRIGHT_CYAN}⏸️▶️ 种子管理:{Colors.RESET}")
+                print("  1. 暂停所有种子")
+                print("  2. 恢复所有种子")
+                print("  3. 暂停问题种子")
+                print("  4. 恢复问题种子")
+                mgmt = input(f"{Colors.BRIGHT_CYAN}{Icon.TERMINAL} 选择操作: {Colors.RESET}").strip()
             
             if mgmt == "1":
                 torrents_all = checker.get_torrents()
-                print(f"\n⏸️ 正在暂停 {len(torrents_all)} 个种子...")
+                if RICH_AVAILABLE:
+                    console.print(f"\n⏸️ 正在暂停 {len(torrents_all)} 个种子...")
+                else:
+                    print(f"\n⏸️ 正在暂停 {len(torrents_all)} 个种子...")
                 for t in torrents_all[:20]:
                     checker.pause_torrent(t['hash'])
-                    print(f"  {Colors.YELLOW}⏸ 已暂停: {t['name'][:45]}{Colors.RESET}")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [yellow]⏸ 已暂停: {t['name'][:45]}[/]")
+                    else:
+                        print(f"  {Colors.YELLOW}⏸ 已暂停: {t['name'][:45]}{Colors.RESET}")
                 if len(torrents_all) > 20:
-                    print(f"  ... 还有 {len(torrents_all)-20} 个种子")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [dim]... 还有 {len(torrents_all)-20} 个种子[/]")
+                    else:
+                        print(f"  ... 还有 {len(torrents_all)-20} 个种子")
             elif mgmt == "2":
                 torrents_all = checker.get_torrents()
-                print(f"\n▶️ 正在恢复 {len(torrents_all)} 个种子...")
+                if RICH_AVAILABLE:
+                    console.print(f"\n▶️ 正在恢复 {len(torrents_all)} 个种子...")
+                else:
+                    print(f"\n▶️ 正在恢复 {len(torrents_all)} 个种子...")
                 for t in torrents_all[:20]:
                     checker.resume_torrent(t['hash'])
-                    print(f"  {Colors.GREEN}▶ 已恢复: {t['name'][:45]}{Colors.RESET}")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [green]▶ 已恢复: {t['name'][:45]}[/]")
+                    else:
+                        print(f"  {Colors.GREEN}▶ 已恢复: {t['name'][:45]}{Colors.RESET}")
             elif mgmt == "3" and problematic:
-                print(f"\n⏸️ 正在暂停 {len(problematic)} 个问题种子...")
+                if RICH_AVAILABLE:
+                    console.print(f"\n⏸️ 正在暂停 {len(problematic)} 个问题种子...")
+                else:
+                    print(f"\n⏸️ 正在暂停 {len(problematic)} 个问题种子...")
                 for t in problematic:
                     checker.pause_torrent(t['hash'])
-                    print(f"  {Colors.YELLOW}⏸ 已暂停: {t['name'][:45]}{Colors.RESET}")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [yellow]⏸ 已暂停: {t['name'][:45]}[/]")
+                    else:
+                        print(f"  {Colors.YELLOW}⏸ 已暂停: {t['name'][:45]}{Colors.RESET}")
             elif mgmt == "4" and problematic:
-                print(f"\n▶️ 正在恢复 {len(problematic)} 个问题种子...")
+                if RICH_AVAILABLE:
+                    console.print(f"\n▶️ 正在恢复 {len(problematic)} 个问题种子...")
+                else:
+                    print(f"\n▶️ 正在恢复 {len(problematic)} 个问题种子...")
                 for t in problematic:
                     checker.resume_torrent(t['hash'])
-                    print(f"  {Colors.GREEN}▶ 已恢复: {t['name'][:45]}{Colors.RESET}")
+                    if RICH_AVAILABLE:
+                        console.print(f"  [green]▶ 已恢复: {t['name'][:45]}[/]")
+                    else:
+                        print(f"  {Colors.GREEN}▶ 已恢复: {t['name'][:45]}{Colors.RESET}")
 
 
 # ============================================================================
@@ -855,11 +1254,19 @@ def main():
     try:
         interactive_mode()
     except KeyboardInterrupt:
-        print(f"\n\n{Colors.YELLOW}{Icon.WARNING} 用户中断{Colors.RESET}")
-        print(f"{Colors.DIM}🐧 作者: 老司机  💬 QQ群: 156586507{Colors.RESET}\n")
+        if RICH_AVAILABLE:
+            console.print("\n\n[yellow]⚠ 用户中断[/]")
+            console.print("[dim]🐧 作者: 老司机  💬 QQ群: 156586507[/]\n")
+        else:
+            print(f"\n\n{Colors.YELLOW}{Icon.WARNING} 用户中断{Colors.RESET}")
+            print(f"{Colors.DIM}🐧 作者: 老司机  💬 QQ群: 156586507{Colors.RESET}\n")
     except Exception as e:
-        print(f"\n{Colors.RED}{Icon.ERROR} 程序异常: {e}{Colors.RESET}")
-        print(f"{Colors.DIM}🐧 作者: 老司机  💬 QQ群: 156586507{Colors.RESET}\n")
+        if RICH_AVAILABLE:
+            console.print(f"\n[red]✗ 程序异常: {e}[/]")
+            console.print("[dim]🐧 作者: 老司机  💬 QQ群: 156586507[/]\n")
+        else:
+            print(f"\n{Colors.RED}{Icon.ERROR} 程序异常: {e}{Colors.RESET}")
+            print(f"{Colors.DIM}🐧 作者: 老司机  💬 QQ群: 156586507{Colors.RESET}\n")
 
 
 if __name__ == "__main__":
